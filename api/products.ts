@@ -12,9 +12,23 @@ import {
   ProductStatus 
 } from '../src/types'
 import { generateSlug, validateProductData, calculateDiscountedPrice } from '../src/utils'
+import { withSecurity } from '../src/middleware/security'
 
 // GET /api/shop/products - Get all products with pagination and filtering
 async function getProducts(req: NextApiRequest, res: NextApiResponse) {
+  // Apply security middleware
+  const securityPassed = await withSecurity(req, res, {
+    rateLimit: { maxRequests: 100 },
+    csrf: false, // GET requests don't need CSRF protection
+    sanitizeInput: true,
+    validateIP: true,
+    setHeaders: true
+  })
+  
+  if (!securityPassed) {
+    return // Security middleware already sent the response
+  }
+
   try {
     const {
       page = 1,
@@ -32,8 +46,9 @@ async function getProducts(req: NextApiRequest, res: NextApiResponse) {
       sortOrder = 'desc'
     } = req.query as ProductQuery
 
-    const pageNum = parseInt(page as string)
-    const limitNum = parseInt(limit as string)
+    // Validate and sanitize pagination parameters
+    const pageNum = Math.max(1, parseInt(page as string) || 1)
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 12))
     const skip = (pageNum - 1) * limitNum
 
     // Build where clause
@@ -41,7 +56,18 @@ async function getProducts(req: NextApiRequest, res: NextApiResponse) {
     
     // Only show active products for non-authenticated users
     const session = await getSession({ req })
-    if (!session?.user || session.user.role !== 'admin') {
+    let isAdmin = false
+    
+    if (session?.user) {
+      // Get user from database to verify role (don't trust client session)
+      const user = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { id: true, role: true }
+      })
+      isAdmin = user?.role === 'admin'
+    }
+    
+    if (!isAdmin) {
       where.status = ProductStatus.ACTIVE
     } else if (status) {
       where.status = status
@@ -87,8 +113,18 @@ async function getProducts(req: NextApiRequest, res: NextApiResponse) {
     
     if (minPrice || maxPrice) {
       where.price = {}
-      if (minPrice) where.price.gte = parseFloat(minPrice as string)
-      if (maxPrice) where.price.lte = parseFloat(maxPrice as string)
+      if (minPrice) {
+        const minPriceNum = parseFloat(minPrice as string)
+        if (!isNaN(minPriceNum) && minPriceNum >= 0) {
+          where.price.gte = minPriceNum
+        }
+      }
+      if (maxPrice) {
+        const maxPriceNum = parseFloat(maxPrice as string)
+        if (!isNaN(maxPriceNum) && maxPriceNum >= 0) {
+          where.price.lte = maxPriceNum
+        }
+      }
     }
     
     if (inStock === 'true') {
@@ -101,15 +137,15 @@ async function getProducts(req: NextApiRequest, res: NextApiResponse) {
       ]
     }
 
-    // Build order clause
+    // Build order clause with SQL injection protection
+    const allowedSortFields = ['createdAt', 'updatedAt', 'name', 'price', 'featured', 'status']
+    const allowedSortOrders = ['asc', 'desc']
+    
+    const safeSortBy = allowedSortFields.includes(sortBy as string) ? sortBy as string : 'createdAt'
+    const safeSortOrder = allowedSortOrders.includes(sortOrder as string) ? sortOrder as string : 'desc'
+    
     const orderBy: any = {}
-    if (sortBy === 'price') {
-      orderBy.price = sortOrder
-    } else if (sortBy === 'name') {
-      orderBy.name = sortOrder
-    } else {
-      orderBy[sortBy as string] = sortOrder
-    }
+    orderBy[safeSortBy] = safeSortOrder
 
     // Get products with relations
     const [products, total] = await Promise.all([
@@ -194,16 +230,44 @@ async function getProducts(req: NextApiRequest, res: NextApiResponse) {
 
     return successResponse(res, response.data)
   } catch (error) {
-    console.error('Error fetching products:', error)
+    // Log error securely without exposing sensitive data
+    console.error('Error fetching products:', {
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: process.env.NODE_ENV === 'development' ? (error as Error).stack : undefined
+    })
     return errorResponse(res, 'Failed to fetch products', 500)
   }
 }
 
 // POST /api/shop/products - Create a new product
 async function createProduct(req: NextApiRequest, res: NextApiResponse) {
+  // Apply security middleware with CSRF protection
+  const securityPassed = await withSecurity(req, res, {
+    rateLimit: { maxRequests: 20 }, // Stricter rate limit for POST requests
+    csrf: true, // POST requests need CSRF protection
+    sanitizeInput: true,
+    validateIP: true,
+    setHeaders: true
+  })
+  
+  if (!securityPassed) {
+    return // Security middleware already sent the response
+  }
+
   try {
     const session = await getSession({ req })
-    if (!session?.user || session.user.role !== 'admin') {
+    if (!session?.user) {
+      return errorResponse(res, 'Unauthorized', 401)
+    }
+
+    // Get user from database to verify role (don't trust client session)
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { id: true, role: true }
+    })
+
+    if (!user || user.role !== 'admin') {
       return errorResponse(res, 'Unauthorized', 401)
     }
 
@@ -299,16 +363,44 @@ async function createProduct(req: NextApiRequest, res: NextApiResponse) {
 
     return successResponse(res, response.data, 201)
   } catch (error) {
-    console.error('Error creating product:', error)
+    // Log error securely without exposing sensitive data
+    console.error('Error creating product:', {
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: process.env.NODE_ENV === 'development' ? (error as Error).stack : undefined
+    })
     return errorResponse(res, 'Failed to create product', 500)
   }
 }
 
 // PUT /api/shop/products/[id] - Update a product
 async function updateProduct(req: NextApiRequest, res: NextApiResponse) {
+  // Apply security middleware with CSRF protection
+  const securityPassed = await withSecurity(req, res, {
+    rateLimit: { maxRequests: 20 }, // Stricter rate limit for PUT requests
+    csrf: true, // PUT requests need CSRF protection
+    sanitizeInput: true,
+    validateIP: true,
+    setHeaders: true
+  })
+  
+  if (!securityPassed) {
+    return // Security middleware already sent the response
+  }
+
   try {
     const session = await getSession({ req })
-    if (!session?.user || session.user.role !== 'admin') {
+    if (!session?.user) {
+      return errorResponse(res, 'Unauthorized', 401)
+    }
+
+    // Get user from database to verify role (don't trust client session)
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { id: true, role: true }
+    })
+
+    if (!user || user.role !== 'admin') {
       return errorResponse(res, 'Unauthorized', 401)
     }
 
@@ -421,16 +513,44 @@ async function updateProduct(req: NextApiRequest, res: NextApiResponse) {
 
     return successResponse(res, response.data)
   } catch (error) {
-    console.error('Error updating product:', error)
+    // Log error securely without exposing sensitive data
+    console.error('Error updating product:', {
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: process.env.NODE_ENV === 'development' ? (error as Error).stack : undefined
+    })
     return errorResponse(res, 'Failed to update product', 500)
   }
 }
 
 // DELETE /api/shop/products/[id] - Delete a product
 async function deleteProduct(req: NextApiRequest, res: NextApiResponse) {
+  // Apply security middleware with CSRF protection
+  const securityPassed = await withSecurity(req, res, {
+    rateLimit: { maxRequests: 10 }, // Very strict rate limit for DELETE requests
+    csrf: true, // DELETE requests need CSRF protection
+    sanitizeInput: true,
+    validateIP: true,
+    setHeaders: true
+  })
+  
+  if (!securityPassed) {
+    return // Security middleware already sent the response
+  }
+
   try {
     const session = await getSession({ req })
-    if (!session?.user || session.user.role !== 'admin') {
+    if (!session?.user) {
+      return errorResponse(res, 'Unauthorized', 401)
+    }
+
+    // Get user from database to verify role (don't trust client session)
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { id: true, role: true }
+    })
+
+    if (!user || user.role !== 'admin') {
       return errorResponse(res, 'Unauthorized', 401)
     }
 
@@ -457,13 +577,31 @@ async function deleteProduct(req: NextApiRequest, res: NextApiResponse) {
 
     return successResponse(res, response)
   } catch (error) {
-    console.error('Error deleting product:', error)
+    // Log error securely without exposing sensitive data
+    console.error('Error deleting product:', {
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: process.env.NODE_ENV === 'development' ? (error as Error).stack : undefined
+    })
     return errorResponse(res, 'Failed to delete product', 500)
   }
 }
 
 // GET /api/shop/products/[slug] - Get single product by slug
 async function getProductBySlug(req: NextApiRequest, res: NextApiResponse) {
+  // Apply security middleware
+  const securityPassed = await withSecurity(req, res, {
+    rateLimit: { maxRequests: 200 }, // Higher rate limit for individual product views
+    csrf: false, // GET requests don't need CSRF protection
+    sanitizeInput: true,
+    validateIP: true,
+    setHeaders: true
+  })
+  
+  if (!securityPassed) {
+    return // Security middleware already sent the response
+  }
+
   try {
     const { slug } = req.query
 
@@ -524,8 +662,21 @@ async function getProductBySlug(req: NextApiRequest, res: NextApiResponse) {
 
     // Only show active products for non-authenticated users
     const session = await getSession({ req })
-    if (product.status !== ProductStatus.ACTIVE && (!session?.user || session.user.role !== 'admin')) {
-      return errorResponse(res, 'Product not found', 404)
+    if (product.status !== ProductStatus.ACTIVE) {
+      let isAdmin = false
+      
+      if (session?.user) {
+        // Get user from database to verify role (don't trust client session)
+        const user = await prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { id: true, role: true }
+        })
+        isAdmin = user?.role === 'admin'
+      }
+      
+      if (!isAdmin) {
+        return errorResponse(res, 'Product not found', 404)
+      }
     }
 
     const response: ShopApiResponse<Product> = {
@@ -535,7 +686,12 @@ async function getProductBySlug(req: NextApiRequest, res: NextApiResponse) {
 
     return successResponse(res, response.data)
   } catch (error) {
-    console.error('Error fetching product:', error)
+    // Log error securely without exposing sensitive data
+    console.error('Error fetching product:', {
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: process.env.NODE_ENV === 'development' ? (error as Error).stack : undefined
+    })
     return errorResponse(res, 'Failed to fetch product', 500)
   }
 }
