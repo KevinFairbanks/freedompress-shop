@@ -34,8 +34,19 @@ export async function withRateLimit(
 export function withCSRFProtection(
   req: NextApiRequest,
   res: NextApiResponse,
-  secret: string = process.env.CSRF_SECRET || 'your-secret-key'
+  secret?: string
 ) {
+  // Require CSRF_SECRET environment variable in production
+  const csrfSecret = secret || process.env.CSRF_SECRET
+  if (!csrfSecret) {
+    console.error('CSRF_SECRET environment variable is required')
+    res.status(500).json({
+      success: false,
+      error: 'Server configuration error',
+      code: 'CSRF_SECRET_MISSING'
+    })
+    return false
+  }
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
     return true // Safe methods don't need CSRF protection
   }
@@ -51,7 +62,7 @@ export function withCSRFProtection(
   }
 
   try {
-    const isValid = csrfTokens.verify(secret, token)
+    const isValid = csrfTokens.verify(csrfSecret, token)
     if (!isValid) {
       res.status(403).json({
         success: false,
@@ -73,8 +84,12 @@ export function withCSRFProtection(
 }
 
 // Generate CSRF token
-export function generateCSRFToken(secret: string = process.env.CSRF_SECRET || 'your-secret-key') {
-  return csrfTokens.create(secret)
+export function generateCSRFToken(secret?: string) {
+  const csrfSecret = secret || process.env.CSRF_SECRET
+  if (!csrfSecret) {
+    throw new Error('CSRF_SECRET environment variable is required')
+  }
+  return csrfTokens.create(csrfSecret)
 }
 
 // Input sanitization middleware
@@ -149,7 +164,7 @@ export function setSecurityHeaders(res: NextApiResponse) {
   res.setHeader('X-Frame-Options', 'DENY')
   res.setHeader('X-XSS-Protection', '1; mode=block')
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';")
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';")
   
   if (process.env.NODE_ENV === 'production') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')

@@ -96,7 +96,7 @@ const ProductList: React.FC<ProductListProps> = ({
                     key={page}
                     onClick={() => {
                       // Handle page change
-                      console.log(`Go to page ${page}`)
+                      // TODO: Implement pagination navigation
                     }}
                     className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                       isActive

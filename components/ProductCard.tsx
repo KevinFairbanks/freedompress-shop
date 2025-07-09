@@ -16,12 +16,12 @@ const ProductCard: React.FC<ProductCardProps> = ({
   
   const handleAddToCart = () => {
     // This would typically dispatch to a cart store
-    console.log('Add to cart:', product.id)
+    // TODO: Implement cart store integration
   }
 
   const handleQuickView = () => {
     // This would typically open a modal
-    console.log('Quick view:', product.id)
+    // TODO: Implement quick view modal
   }
 
   return (

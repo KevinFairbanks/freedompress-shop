@@ -1,6 +1,17 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import { CartStore, Cart, CartItemInput } from '../src/types'
+import { generateCSRFToken } from '../src/middleware/security'
+
+// Helper function to get CSRF token
+const getCSRFToken = async (): Promise<string> => {
+  try {
+    return generateCSRFToken()
+  } catch (error) {
+    console.error('Failed to generate CSRF token:', error)
+    throw new Error('Security configuration error')
+  }
+}
 
 // API functions (would typically be in a separate API client)
 const cartApi = {
@@ -13,10 +24,12 @@ const cartApi = {
   },
 
   async addItem(item: CartItemInput): Promise<Cart> {
+    const csrfToken = await getCSRFToken()
     const response = await fetch('/api/shop/cart/items', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken,
       },
       body: JSON.stringify(item),
     })
@@ -27,10 +40,12 @@ const cartApi = {
   },
 
   async updateQuantity(itemId: string, quantity: number): Promise<Cart> {
+    const csrfToken = await getCSRFToken()
     const response = await fetch(`/api/shop/cart/items/${itemId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken,
       },
       body: JSON.stringify({ quantity }),
     })
@@ -41,8 +56,12 @@ const cartApi = {
   },
 
   async removeItem(itemId: string): Promise<Cart> {
+    const csrfToken = await getCSRFToken()
     const response = await fetch(`/api/shop/cart/items/${itemId}`, {
       method: 'DELETE',
+      headers: {
+        'X-CSRF-Token': csrfToken,
+      },
     })
     if (!response.ok) {
       throw new Error('Failed to remove item from cart')
@@ -51,8 +70,12 @@ const cartApi = {
   },
 
   async clearCart(): Promise<void> {
+    const csrfToken = await getCSRFToken()
     const response = await fetch('/api/shop/cart', {
       method: 'DELETE',
+      headers: {
+        'X-CSRF-Token': csrfToken,
+      },
     })
     if (!response.ok) {
       throw new Error('Failed to clear cart')
@@ -60,10 +83,12 @@ const cartApi = {
   },
 
   async applyDiscount(code: string): Promise<Cart> {
+    const csrfToken = await getCSRFToken()
     const response = await fetch('/api/shop/cart/discount', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken,
       },
       body: JSON.stringify({ code }),
     })
@@ -74,8 +99,12 @@ const cartApi = {
   },
 
   async removeDiscount(): Promise<Cart> {
+    const csrfToken = await getCSRFToken()
     const response = await fetch('/api/shop/cart/discount', {
       method: 'DELETE',
+      headers: {
+        'X-CSRF-Token': csrfToken,
+      },
     })
     if (!response.ok) {
       throw new Error('Failed to remove discount')

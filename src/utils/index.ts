@@ -122,6 +122,34 @@ export function validateProductData(data: ProductCreateInput | ProductUpdateInpu
     errors.push('SKU must be less than 100 characters')
   }
 
+  // Validate product variants data
+  if ((data as any).variants && Array.isArray((data as any).variants)) {
+    const variants = (data as any).variants
+    variants.forEach((variant: any, index: number) => {
+      if (variant.price !== undefined && variant.price < 0) {
+        errors.push(`Variant ${index + 1} price must be positive`)
+      }
+      if (variant.comparePrice !== undefined && variant.comparePrice < 0) {
+        errors.push(`Variant ${index + 1} compare price must be positive`)
+      }
+      if (variant.quantity !== undefined && variant.quantity < 0) {
+        errors.push(`Variant ${index + 1} quantity must be non-negative`)
+      }
+      if (variant.sku && variant.sku.length > 100) {
+        errors.push(`Variant ${index + 1} SKU must be less than 100 characters`)
+      }
+      if (variant.option1Value && variant.option1Value.length > 255) {
+        errors.push(`Variant ${index + 1} option1Value must be less than 255 characters`)
+      }
+      if (variant.option2Value && variant.option2Value.length > 255) {
+        errors.push(`Variant ${index + 1} option2Value must be less than 255 characters`)
+      }
+      if (variant.option3Value && variant.option3Value.length > 255) {
+        errors.push(`Variant ${index + 1} option3Value must be less than 255 characters`)
+      }
+    })
+  }
+
   return {
     valid: errors.length === 0,
     errors

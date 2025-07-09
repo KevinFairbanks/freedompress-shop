@@ -66,7 +66,7 @@ export const shopModule: ModuleInterface = {
   },
 
   async install(context) {
-    console.log('Installing shop module...')
+    // Installing shop module
     
     // Add shop-specific settings
     await context.prisma.setting.createMany({
@@ -83,11 +83,11 @@ export const shopModule: ModuleInterface = {
       skipDuplicates: true
     })
     
-    console.log('Shop module installed successfully')
+    // Shop module installed successfully
   },
 
   async activate(context) {
-    console.log('Activating shop module...')
+    // Activating shop module
     
     // Register shop routes
     context.events.emit('module:routes:register', {
@@ -107,17 +107,17 @@ export const shopModule: ModuleInterface = {
       provider: 'stripe'
     })
     
-    console.log('Shop module activated successfully')
+    // Shop module activated successfully
   },
 
   async deactivate(context) {
-    console.log('Deactivating shop module...')
+    // Deactivating shop module
     
     // Unregister routes and pages
     context.events.emit('module:routes:unregister', { module: 'shop' })
     context.events.emit('module:pages:unregister', { module: 'shop' })
     
-    console.log('Shop module deactivated successfully')
+    // Shop module deactivated successfully
   },
 
   getDefaultConfig() {
